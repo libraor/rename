@@ -106,28 +106,48 @@ def process_files():
     if not directory:
         return
 
-    # 创建一个弹出窗口来选择是否进行PDF遍历和分割
+    # 创建一个弹出窗口来选择是否进行PDF遍历和分割以及是否仅进行PDF处理
     option_window = Toplevel(root)
     option_window.title("选项")
-    option_window.geometry("300x100")
+    option_window.geometry("300x150")
 
     split_pdf_option = tk.IntVar()
+    only_split_pdf_option = tk.IntVar()
 
     split_pdf_checkbox = Checkbutton(option_window, text="遍历并分割PDF文件", variable=split_pdf_option)
     split_pdf_checkbox.pack(pady=10)
 
+    only_split_pdf_checkbox = Checkbutton(option_window, text="仅进行PDF遍历和分割", variable=only_split_pdf_option)
+    only_split_pdf_checkbox.pack(pady=10)
+
     def on_confirm():
         option_window.destroy()
-        process_files_with_options(directory, split_pdf_option.get())
+        process_files_with_options(directory, split_pdf_option.get(), only_split_pdf_option.get())
 
     confirm_button = tk.Button(option_window, text="确认", command=on_confirm)
     confirm_button.pack(pady=5)
 
-def process_files_with_options(directory, split_pdfs):
+def process_files_with_options(directory, split_pdfs, only_split_pdfs):
     """
-    处理多个文件，根据选项决定是否进行PDF遍历和分割
+    处理多个文件，根据选项决定是否进行PDF遍历和分割以及是否仅进行PDF处理
     """
+    if only_split_pdfs:
+        # 仅进行PDF遍历和分割
+        try:
+            pdf_files = get_files(directory)
+            pdf_files = [file for file in pdf_files if file.lower().endswith('.pdf')]
+            for pdf_file in pdf_files:
+                logging.info(f"开始分割 PDF 文件: {pdf_file}")
+                split_pdf_by_layout(pdf_file, directory)
+                logging.info(f"完成分割 PDF 文件: {pdf_file}")
+            messagebox.showinfo("完成", "仅进行了PDF遍历和分割。")
+            return
+        except Exception as e:
+            messagebox.showerror("错误", f"处理 PDF 文件时出错：{e}")
+            return
+
     if split_pdfs:
+        # 进行PDF遍历和分割
         try:
             pdf_files = get_files(directory)
             pdf_files = [file for file in pdf_files if file.lower().endswith('.pdf')]

@@ -16,13 +16,39 @@ def analyze_layout(page):
             if "lines" in block:
                 for line in block["lines"]:
                     for span in line["spans"]:
-                        layout_features.append((span["size"], span["font"]))
+                        # 增加文本块的位置信息
+                        bbox = span["bbox"]
+                        layout_features.append((span["size"], span["font"], bbox))
     return layout_features
 
 def calculate_image_similarity(img1, img2):
+    # 使用SSIM计算相似度
     gray1 = cv2.cvtColor(img1, cv2.COLOR_BGR2GRAY)
     gray2 = cv2.cvtColor(img2, cv2.COLOR_BGR2GRAY)
-    similarity, _ = ssim(gray1, gray2, full=True)
+    similarity_ssim, _ = ssim(gray1, gray2, full=True)
+
+    # 使用特征匹配计算相似度
+    sift = cv2.SIFT_create()
+    kp1, des1 = sift.detectAndCompute(gray1, None)
+    kp2, des2 = sift.detectAndCompute(gray2, None)
+
+    if des1 is None or des2 is None:
+        logging.warning("SIFT 特征提取失败，返回默认相似度")
+        return similarity_ssim
+
+    if len(kp1) == 0 or len(kp2) == 0:
+        logging.warning("关键点数量为零，返回默认相似度")
+        return similarity_ssim
+
+    bf = cv2.BFMatcher()
+    matches = bf.knnMatch(des1, des2, k=2)
+    good_matches = []
+    for m, n in matches:
+        if m.distance < 0.75 * n.distance:
+            good_matches.append(m)
+    
+    similarity_feature = len(good_matches) / max(len(kp1), len(kp2))
+    similarity = (similarity_ssim + similarity_feature) / 2
     return similarity
 
 def split_pdf_by_layout(pdf_path, output_dir):
@@ -44,7 +70,15 @@ def split_pdf_by_layout(pdf_path, output_dir):
                 prev_image = img_array
                 continue
 
-            if abs(len(current_layout) - len(prev_layout)) > 10:
+            # 增加文本内容变化的判断
+            prev_text = doc[page_num - 1].get_text()
+            current_text = page.get_text()
+            if prev_text.strip() and current_text.strip():
+                text_similarity = len(set(prev_text.split()) & set(current_text.split())) / len(set(prev_text.split()) | set(current_text.split()))
+            else:
+                text_similarity = 0
+
+            if abs(len(current_layout) - len(prev_layout)) > 10 or text_similarity < 0.8:
                 layout_changes.append(page_num)
 
             if prev_image is not None:
