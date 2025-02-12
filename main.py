@@ -2,7 +2,7 @@
 import time
 import os
 import tkinter as tk
-from tkinter import filedialog, messagebox, Checkbutton, Toplevel
+from tkinter import filedialog, messagebox, Radiobutton, Toplevel
 import traceback
 from tkinter.ttk import Progressbar
 import logging
@@ -106,33 +106,92 @@ def process_files():
     if not directory:
         return
 
-    # 创建一个弹出窗口来选择是否进行PDF遍历和分割以及是否仅进行PDF处理
+    # 创建一个弹出窗口来选择处理选项
     option_window = Toplevel(root)
     option_window.title("选项")
     option_window.geometry("300x150")
 
-    split_pdf_option = tk.IntVar()
-    only_split_pdf_option = tk.IntVar()
+    process_option = tk.IntVar(value=3)  # 默认选择“进行遍历和识别”
 
-    split_pdf_checkbox = Checkbutton(option_window, text="遍历并分割PDF文件", variable=split_pdf_option)
-    split_pdf_checkbox.pack(pady=10)
+    only_recognize_radio = Radiobutton(option_window, text="仅进行识别不遍历", variable=process_option, value=1)
+    only_recognize_radio.pack(pady=5)
 
-    only_split_pdf_checkbox = Checkbutton(option_window, text="仅进行PDF遍历和分割", variable=only_split_pdf_option)
-    only_split_pdf_checkbox.pack(pady=10)
+    only_split_radio = Radiobutton(option_window, text="仅进行遍历不识别", variable=process_option, value=2)
+    only_split_radio.pack(pady=5)
+
+    both_radio = Radiobutton(option_window, text="进行遍历和识别", variable=process_option, value=3)
+    both_radio.pack(pady=5)
 
     def on_confirm():
         option_window.destroy()
-        process_files_with_options(directory, split_pdf_option.get(), only_split_pdf_option.get())
+        process_files_with_options(directory, process_option.get())
 
     confirm_button = tk.Button(option_window, text="确认", command=on_confirm)
-    confirm_button.pack(pady=5)
+    confirm_button.pack(pady=10)
 
-def process_files_with_options(directory, split_pdfs, only_split_pdfs):
+def process_files_with_options(directory, process_option):
     """
-    处理多个文件，根据选项决定是否进行PDF遍历和分割以及是否仅进行PDF处理
+    处理多个文件，根据选项决定是否进行PDF遍历和分割以及是否进行文件内容的识别和重命名
     """
-    if only_split_pdfs:
-        # 仅进行PDF遍历和分割
+    if process_option == 1:  # 仅进行识别不遍历
+        files = get_files(directory)
+
+        if not files:
+            return
+
+        total_files = len(files)
+        progress_bar = Progressbar(root, orient='horizontal', length=300, mode='determinate')
+        progress_bar.pack(pady=10)
+        progress_bar['maximum'] = total_files
+        processed_count = 0
+
+        def update_progress(value):
+            percent = int((value / total_files) * 100)
+            progress_label.config(text=f"{percent}% 完成")
+            progress_bar['value'] = value
+            root.update_idletasks()
+
+        file_times = {}  # 用于存储每个文件的处理时间
+        file_sizes = {}  # 用于存储每个文件的内容长度
+
+        total_elapsed_time = 0  # 总处理时间
+        total_content_length = 0  # 总内容长度
+
+        with ThreadPoolExecutor(max_workers=1) as executor:  # 创建一个线程池，最大线程数为 1
+            futures = {executor.submit(process_file, file, progress_bar, total_files): file for file in files}
+            for future in as_completed(futures):
+                try:
+                    file, elapsed_time, content_length = future.result()
+                    if elapsed_time is not None:
+                        file_times[file] = elapsed_time
+                        total_elapsed_time += elapsed_time
+                    if content_length is not None:
+                        file_sizes[file] = content_length
+                        total_content_length += content_length
+                    processed_count += 1
+                    update_progress(processed_count)
+                except Exception as e:
+                    logging.error(f"处理文件时出错：{e}")
+
+        # 输出每个文件的处理时间
+        print("\n每个文件的处理时间：")
+        for file, elapsed_time in file_times.items():
+            print(f"{file}: {elapsed_time:.2f} 秒")
+
+        # 输出每个文件的内容长度
+        print("\n每个文件的内容长度：")
+        for file, content_length in file_sizes.items():
+            print(f"{file}: {content_length} 字节")
+
+        # 输出总的文件处理时间和总的文件内容长度
+        print(f"\n总的文件处理时间: {total_elapsed_time:.2f} 秒")
+        print(f"总的文件内容长度: {total_content_length} 字节")
+
+        messagebox.showinfo("完成", "文件处理已完成。")
+        progress_bar.destroy()  # 关闭进度条
+        progress_label.config(text="处理已完成")
+
+    elif process_option == 2:  # 仅进行遍历不识别
         try:
             pdf_files = get_files(directory)
             pdf_files = [file for file in pdf_files if file.lower().endswith('.pdf')]
@@ -141,13 +200,10 @@ def process_files_with_options(directory, split_pdfs, only_split_pdfs):
                 split_pdf_by_layout(pdf_file, directory)
                 logging.info(f"完成分割 PDF 文件: {pdf_file}")
             messagebox.showinfo("完成", "仅进行了PDF遍历和分割。")
-            return
         except Exception as e:
             messagebox.showerror("错误", f"处理 PDF 文件时出错：{e}")
-            return
 
-    if split_pdfs:
-        # 进行PDF遍历和分割
+    elif process_option == 3:  # 进行遍历和识别
         try:
             pdf_files = get_files(directory)
             pdf_files = [file for file in pdf_files if file.lower().endswith('.pdf')]
@@ -159,62 +215,62 @@ def process_files_with_options(directory, split_pdfs, only_split_pdfs):
             messagebox.showerror("错误", f"处理 PDF 文件时出错：{e}")
             return
 
-    files = get_files(directory)
+        files = get_files(directory)
 
-    if not files:
-        return
+        if not files:
+            return
 
-    total_files = len(files)
-    progress_bar = Progressbar(root, orient='horizontal', length=300, mode='determinate')
-    progress_bar.pack(pady=10)
-    progress_bar['maximum'] = total_files
-    processed_count = 0
+        total_files = len(files)
+        progress_bar = Progressbar(root, orient='horizontal', length=300, mode='determinate')
+        progress_bar.pack(pady=10)
+        progress_bar['maximum'] = total_files
+        processed_count = 0
 
-    def update_progress(value):
-        percent = int((value / total_files) * 100)
-        progress_label.config(text=f"{percent}% 完成")
-        progress_bar['value'] = value
-        root.update_idletasks()
+        def update_progress(value):
+            percent = int((value / total_files) * 100)
+            progress_label.config(text=f"{percent}% 完成")
+            progress_bar['value'] = value
+            root.update_idletasks()
 
-    file_times = {}  # 用于存储每个文件的处理时间
-    file_sizes = {}  # 用于存储每个文件的内容长度
+        file_times = {}  # 用于存储每个文件的处理时间
+        file_sizes = {}  # 用于存储每个文件的内容长度
 
-    total_elapsed_time = 0  # 总处理时间
-    total_content_length = 0  # 总内容长度
+        total_elapsed_time = 0  # 总处理时间
+        total_content_length = 0  # 总内容长度
 
-    with ThreadPoolExecutor(max_workers=1) as executor:  # 创建一个线程池，最大线程数为 1
-        futures = {executor.submit(process_file, file, progress_bar, total_files): file for file in files}
-        for future in as_completed(futures):
-            try:
-                file, elapsed_time, content_length = future.result()
-                if elapsed_time is not None:
-                    file_times[file] = elapsed_time
-                    total_elapsed_time += elapsed_time
-                if content_length is not None:
-                    file_sizes[file] = content_length
-                    total_content_length += content_length
-                processed_count += 1
-                update_progress(processed_count)
-            except Exception as e:
-                logging.error(f"处理文件时出错：{e}")
+        with ThreadPoolExecutor(max_workers=1) as executor:  # 创建一个线程池，最大线程数为 1
+            futures = {executor.submit(process_file, file, progress_bar, total_files): file for file in files}
+            for future in as_completed(futures):
+                try:
+                    file, elapsed_time, content_length = future.result()
+                    if elapsed_time is not None:
+                        file_times[file] = elapsed_time
+                        total_elapsed_time += elapsed_time
+                    if content_length is not None:
+                        file_sizes[file] = content_length
+                        total_content_length += content_length
+                    processed_count += 1
+                    update_progress(processed_count)
+                except Exception as e:
+                    logging.error(f"处理文件时出错：{e}")
 
-    # 输出每个文件的处理时间
-    print("\n每个文件的处理时间：")
-    for file, elapsed_time in file_times.items():
-        print(f"{file}: {elapsed_time:.2f} 秒")
+        # 输出每个文件的处理时间
+        print("\n每个文件的处理时间：")
+        for file, elapsed_time in file_times.items():
+            print(f"{file}: {elapsed_time:.2f} 秒")
 
-    # 输出每个文件的内容长度
-    print("\n每个文件的内容长度：")
-    for file, content_length in file_sizes.items():
-        print(f"{file}: {content_length} 字节")
+        # 输出每个文件的内容长度
+        print("\n每个文件的内容长度：")
+        for file, content_length in file_sizes.items():
+            print(f"{file}: {content_length} 字节")
 
-    # 输出总的文件处理时间和总的文件内容长度
-    print(f"\n总的文件处理时间: {total_elapsed_time:.2f} 秒")
-    print(f"总的文件内容长度: {total_content_length} 字节")
+        # 输出总的文件处理时间和总的文件内容长度
+        print(f"\n总的文件处理时间: {total_elapsed_time:.2f} 秒")
+        print(f"总的文件内容长度: {total_content_length} 字节")
 
-    messagebox.showinfo("完成", "文件处理已完成。")
-    progress_bar.destroy()  # 关闭进度条
-    progress_label.config(text="处理已完成")
+        messagebox.showinfo("完成", "文件处理已完成。")
+        progress_bar.destroy()  # 关闭进度条
+        progress_label.config(text="处理已完成")
 
 # 创建主窗口
 root = tk.Tk()
