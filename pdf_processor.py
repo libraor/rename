@@ -54,6 +54,13 @@ def calculate_image_similarity(img1, img2):
 def split_pdf_by_layout(pdf_path, output_dir):
     try:
         doc = fitz.open(pdf_path)
+        
+        if doc.page_count == 1:
+            # 如果PDF文件仅有一页，直接跳过分割，记录日志
+            logging.info(f"PDF 文件 {pdf_path} 仅有一页，跳过分割")
+            doc.close()
+            return
+
         layout_changes = []
         prev_layout = None
         prev_image = None
@@ -88,6 +95,9 @@ def split_pdf_by_layout(pdf_path, output_dir):
 
             prev_layout = current_layout
             prev_image = img_array
+
+        # 使用原始文件所在的目录作为输出目录
+        output_dir = os.path.dirname(pdf_path)
 
         current_file_pages = []
         file_index = 0

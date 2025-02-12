@@ -111,15 +111,15 @@ def process_files():
     option_window.title("选项")
     option_window.geometry("300x150")
 
-    process_option = tk.IntVar(value=3)  # 默认选择“进行遍历和识别”
+    process_option = tk.IntVar(value=3)  # 默认选择“进行分割和识别”
 
-    only_recognize_radio = Radiobutton(option_window, text="仅进行识别不遍历", variable=process_option, value=1)
+    only_recognize_radio = Radiobutton(option_window, text="仅进行识别不分割", variable=process_option, value=1)
     only_recognize_radio.pack(pady=5)
 
-    only_split_radio = Radiobutton(option_window, text="仅进行遍历不识别", variable=process_option, value=2)
+    only_split_radio = Radiobutton(option_window, text="仅进行分割不识别", variable=process_option, value=2)
     only_split_radio.pack(pady=5)
 
-    both_radio = Radiobutton(option_window, text="进行遍历和识别", variable=process_option, value=3)
+    both_radio = Radiobutton(option_window, text="进行分割和识别", variable=process_option, value=3)
     both_radio.pack(pady=5)
 
     def on_confirm():
@@ -131,9 +131,9 @@ def process_files():
 
 def process_files_with_options(directory, process_option):
     """
-    处理多个文件，根据选项决定是否进行PDF遍历和分割以及是否进行文件内容的识别和重命名
+    处理多个文件，根据选项决定是否进行PDF分割以及是否进行文件内容的识别和重命名
     """
-    if process_option == 1:  # 仅进行识别不遍历
+    if process_option == 1:  # 仅进行识别不分割
         files = get_files(directory)
 
         if not files:
@@ -191,7 +191,7 @@ def process_files_with_options(directory, process_option):
         progress_bar.destroy()  # 关闭进度条
         progress_label.config(text="处理已完成")
 
-    elif process_option == 2:  # 仅进行遍历不识别
+    elif process_option == 2:  # 仅进行分割不识别
         try:
             pdf_files = get_files(directory)
             pdf_files = [file for file in pdf_files if file.lower().endswith('.pdf')]
@@ -199,11 +199,11 @@ def process_files_with_options(directory, process_option):
                 logging.info(f"开始分割 PDF 文件: {pdf_file}")
                 split_pdf_by_layout(pdf_file, directory)
                 logging.info(f"完成分割 PDF 文件: {pdf_file}")
-            messagebox.showinfo("完成", "仅进行了PDF遍历和分割。")
+            messagebox.showinfo("完成", "仅进行了PDF分割。")
         except Exception as e:
             messagebox.showerror("错误", f"处理 PDF 文件时出错：{e}")
 
-    elif process_option == 3:  # 进行遍历和识别
+    elif process_option == 3:  # 进行分割和识别
         try:
             pdf_files = get_files(directory)
             pdf_files = [file for file in pdf_files if file.lower().endswith('.pdf')]
