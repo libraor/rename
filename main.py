@@ -1,4 +1,5 @@
 # main.py
+import time
 import os
 import tkinter as tk
 from tkinter import filedialog, messagebox, Checkbutton, Toplevel
