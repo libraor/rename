@@ -5,3 +5,6 @@ pw.py
 *.pdf
 .vscode
 .code-workspace
+venv
+__pycache__
+*.log
