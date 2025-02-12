@@ -64,5 +64,3 @@ MODEL_NAME = "你的火山接口模型名称"
 4. 推送到分支 (`git push origin feature/AmazingFeature`)。
 5. 打开一个 Pull Request。
 
-```
-
