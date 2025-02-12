@@ -52,15 +52,35 @@ def extract_time_openai(text):
 
 def read_docx(file_path):
     """
-    读取docx文件内容
+    读取docx文件内容，包括段落和表格
     """
     try:
         with open(file_path, 'rb') as f:
             doc = Document(f)
-            full_text = [para.text for para in doc.paragraphs]
-        return '\n'.join(full_text)
+        
+        full_text = []
+
+        # 读取段落内容
+        for para in doc.paragraphs:
+            full_text.append(para.text)
+
+        # 读取表格内容
+        for table in doc.tables:
+            table_text = []
+            for row in table.rows:
+                row_text = []
+                for cell in row.cells:
+                    row_text.append(cell.text)
+                table_text.append('\t'.join(row_text))
+            full_text.append('\n'.join(table_text))
+
+        content = '\n'.join(full_text)
+        print(f"成功读取 {file_path} 内容: {content[:100]}...")  # 直接在终端中输出前100个字符以避免输出过长
+        return content
     except Exception as e:
-        logging.error(f"读取 {file_path} 时出错：{e}", exc_info=True)
+        error_message = f"读取 {file_path} 时出错：{e}"
+        logging.error(error_message, exc_info=True)
+        messagebox.showerror("错误", error_message)
         return None
 
 def read_xlsx(file_path):
