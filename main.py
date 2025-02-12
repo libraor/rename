@@ -130,6 +130,31 @@ def read_pdf(file_path):
         logging.error(f"读取 {file_path} 时出错：{e}", exc_info=True)
         return None
 
+def read_image(file_path):
+    """
+    使用 PaddleOCR 读取图片文件内容
+    """
+    try:
+        img = Image.open(file_path)
+        # 将 PIL 图像转换为 numpy 数组
+        img_array = np.array(img)
+        try:
+            ocr_result = ocr.ocr(img_array, cls=True)  # 使用 PaddleOCR 进行 OCR
+        except Exception as e:
+            logging.error(f"PaddleOCR 处理图片 {file_path} 时出错：{e}", exc_info=True)
+            return None
+        if not ocr_result:  # 检查 OCR 结果是否为空
+            logging.error("OCR 结果为空")
+            return None
+        ocr_text = []
+        for line in ocr_result:
+            for word in line:
+                ocr_text.append(word[1][0])  # 提取识别的文本
+        return ' '.join(ocr_text)
+    except Exception as e:
+        logging.error(f"读取图片 {file_path} 时出错：{e}", exc_info=True)
+        return None
+
 def read_text_file(file_path):
     """
     尝试使用不同编码读取文本文件
@@ -172,6 +197,8 @@ def get_file_content(file_path):
         return read_pptx(file_path)
     elif file_ext == '.pdf':
         return read_pdf(file_path)
+    elif file_ext in ['.jpg', '.jpeg', '.png', '.bmp', '.gif']:
+        return read_image(file_path)
     else:
         return read_text_file(file_path)
 
