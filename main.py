@@ -14,6 +14,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from paddleocr import PaddleOCR
 import numpy as np
 import time  # 导入 time 模块用于计时
+from skimage.metrics import structural_similarity as ssim
+import cv2
 
 # 从 pw.py 文件中导入配置信息
 from pw import API_KEY, BASE_URL, MODEL_NAME
@@ -34,12 +36,10 @@ def extract_time_openai(text):
     try:
         response = client.chat.completions.create(
             model=MODEL_NAME,  # 火山接口模型名称
-            messages=[
-                {
-                    "role": "user",
-                    "content": f"假设你是文件重命名助手，分析文件生成时间与主要内容，以 “yyyymmdd_标题” 格式返回。若无法识别时间，以 “00000000_标题” 格式输出，标题简洁，不超 20 字。不需要任何解释。不需要解析过程。{text}"
-                }
-            ]
+            messages=[{
+                "role": "user",
+                "content": f"假设你是文件重命名助手，分析文件生成时间与主要内容，以 “yyyymmdd_标题” 格式返回。若无法识别时间，以 “00000000_标题” 格式输出，标题简洁，不超 20 字。不需要任何解释。不需要解析过程。{text}"
+            }]
         )
         logging.info("成功调用火山接口 API")
         result = response.choices[0].message.content.strip()
@@ -190,11 +190,10 @@ def read_text_file(file_path):
     messagebox.showerror("错误", f"无法解码文件 {file_path}，请检查文件编码。")
     return None
 
-def get_files():
+def get_files(directory):
     """
     让用户选择一个文件夹，并返回该文件夹下的所有文件路径列表
     """
-    directory = filedialog.askdirectory()
     if directory:
         file_list = []
         for root, dirs, files in os.walk(directory):
@@ -263,14 +262,116 @@ def process_file(file, progress_bar, total_files):
         print(f"处理文件 {file} 失败")  # 输出处理文件失败信息
         return (file, None, None)
 
+def split_pdf_by_layout(pdf_path, output_dir):
+    """
+    根据布局分割PDF文件
+    """
+    import fitz
+
+    def analyze_layout(page):
+        layout_features = []
+        text_dict = page.get_text("dict")
+        if "blocks" in text_dict:
+            for block in text_dict["blocks"]:
+                if "lines" in block:
+                    for line in block["lines"]:
+                        for span in line["spans"]:
+                            layout_features.append((span["size"], span["font"]))
+        return layout_features
+
+    def calculate_image_similarity(img1, img2):
+        # 将图像转换为灰度图像
+        gray1 = cv2.cvtColor(img1, cv2.COLOR_BGR2GRAY)
+        gray2 = cv2.cvtColor(img2, cv2.COLOR_BGR2GRAY)
+        # 计算结构相似性
+        similarity, _ = ssim(gray1, gray2, full=True)
+        return similarity
+
+    try:
+        doc = fitz.open(pdf_path)
+        layout_changes = []
+        prev_layout = None
+        prev_image = None
+
+        for page_num in range(doc.page_count):
+            page = doc[page_num]
+            current_layout = analyze_layout(page)
+            pix = page.get_pixmap()
+            img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+            img_array = np.array(img)
+
+            if prev_layout is None:
+                prev_layout = current_layout
+                prev_image = img_array
+                continue
+
+            # 检查文本布局变化
+            if abs(len(current_layout) - len(prev_layout)) > 10:
+                layout_changes.append(page_num)
+
+            # 检查图像相似度
+            if prev_image is not None:
+                similarity = calculate_image_similarity(prev_image, img_array)
+                if similarity < 0.9:  # 如果相似度低于 0.9，则认为是新的布局
+                    layout_changes.append(page_num)
+
+            prev_layout = current_layout
+            prev_image = img_array
+
+        current_file_pages = []
+        file_index = 0
+        for i in range(doc.page_count):
+            current_file_pages.append(i)
+            if i in layout_changes or i == doc.page_count - 1:
+                new_doc = fitz.open()
+                for num in current_file_pages:
+                    new_doc.insert_pdf(doc, from_page=num, to_page=num)
+                output_path = os.path.join(output_dir, f'split_{file_index}.pdf')
+                new_doc.save(output_path)
+                logging.info(f"分割后的 PDF 文件已保存到 {output_path}")
+                file_index += 1
+                current_file_pages = []
+
+        # 关闭原始文档
+        doc.close()
+
+        # 删除原始 PDF 文件
+        try:
+            os.remove(pdf_path)
+            logging.info(f"原始 PDF 文件 {pdf_path} 已删除")
+        except Exception as e:
+            error_message = f"删除原始 PDF 文件 {pdf_path} 时出错：{e}"
+            logging.error(error_message, exc_info=True)
+            messagebox.showerror("错误", error_message)
+    except Exception as e:
+        error_message = f"分割 PDF 文件 {pdf_path} 时出错：{e}"
+        logging.error(error_message, exc_info=True)
+        messagebox.showerror("错误", error_message)
+
 def process_files():
     """
     处理多个文件
     """
-    files = get_files()
+    directory = filedialog.askdirectory()
+    if not directory:
+        return
+
+    # 获取目录中的所有文件
+    files = get_files(directory)
+
+    # 处理 PDF 文件
+    pdf_files = [file for file in files if file.lower().endswith('.pdf')]
+    for pdf_file in pdf_files:
+        logging.info(f"开始分割 PDF 文件: {pdf_file}")
+        split_pdf_by_layout(pdf_file, directory)
+        logging.info(f"完成分割 PDF 文件: {pdf_file}")
+
+    # 重新获取目录中的所有文件
+    files = get_files(directory)
+
     if not files:
         return
-    
+
     total_files = len(files)
     progress_bar = Progressbar(root, orient='horizontal', length=300, mode='determinate')
     progress_bar.pack(pady=10)
