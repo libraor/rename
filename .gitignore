@@ -1,0 +1,7 @@
+
+.DS_Store
+pw.py
+*.pyc
+*.pdf
+.vscode
+.code-workspace
