@@ -1,10 +1,9 @@
-# main.py
+import sys
 import time
 import os
-import tkinter as tk
-from tkinter import filedialog, messagebox, Radiobutton, Toplevel
-from tkinter.ttk import Progressbar
 import logging
+from PyQt5.QtWidgets import QApplication, QWidget, QPushButton, QVBoxLayout, QRadioButton, QButtonGroup, QLabel, QProgressBar, QMessageBox, QFileDialog, QDialog
+from PyQt5.QtCore import Qt
 from openai import OpenAI
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pdf_processor import split_pdf_by_layout  # 引入PDF遍历和分割模块
@@ -39,7 +38,7 @@ def extract_time_openai(text):
     except Exception as e:
         error_message = f"调用火山接口 API 时出错：{e}"
         logging.error(error_message, exc_info=True)
-        messagebox.showerror("错误", error_message)
+        QMessageBox.critical(None, "错误", error_message)
         return None
 
 def get_files(directory, ext=None):
@@ -62,7 +61,7 @@ def sanitize_filename(filename):
     """
     return "".join(x for x in filename if x.isalnum() or x in "._- ")
 
-def process_file(file, progress_bar, total_files):
+def process_single_file(file, progress_bar, total_files):
     """
     处理单个文件
     """
@@ -89,7 +88,7 @@ def process_file(file, progress_bar, total_files):
             return (file, None, content_length)
     except Exception as e:
         logging.error(f"处理文件 {file} 时出错：{e}", exc_info=True)
-        messagebox.showerror("错误", f"处理文件 {file} 时出错：{e}")
+        QMessageBox.critical(None, "错误", f"处理文件 {file} 时出错：{e}")
         return (file, None, None)
 
 def update_progress(progress_label, progress_bar, processed_count, total_files):
@@ -97,10 +96,8 @@ def update_progress(progress_label, progress_bar, processed_count, total_files):
     更新进度条和标签
     """
     percent = int((processed_count / total_files) * 100)
-    progress_label.config(text=f"{percent}% 完成")
-    progress_bar['value'] = processed_count
-    progress_bar.after(100, lambda: None)  # 异步更新进度条
-    progress_bar.update_idletasks()
+    progress_label.setText(f"{percent}% 完成")
+    progress_bar.setValue(processed_count)
 
 def process_files_with_options(directory, process_option):
     """
@@ -114,7 +111,7 @@ def process_files_with_options(directory, process_option):
             logging.info(f"开始分割 PDF 文件: {pdf_file}")
             split_pdf_by_layout(pdf_file, directory)
             logging.info(f"完成分割 PDF 文件: {pdf_file}")
-        messagebox.showinfo("完成", "仅进行了PDF分割。")
+        QMessageBox.information(None, "完成", "仅进行了PDF分割。")
         return
     elif process_option == 3:  # 进行分割和识别
         pdf_files = get_files(directory, '.pdf')
@@ -128,19 +125,29 @@ def process_files_with_options(directory, process_option):
         return
 
     total_files = len(files)
-    progress_bar = Progressbar(root, orient='horizontal', length=300, mode='determinate')
-    progress_bar.pack(pady=10)
-    progress_bar['maximum'] = total_files
-    progress_label = tk.Label(root, text="0% 完成")
-    progress_label.pack(pady=5)
+    progress_bar = QProgressBar()
+    progress_bar.setRange(0, total_files)
+    progress_bar.setAlignment(Qt.AlignCenter)
+
+    progress_label = QLabel("0% 完成")
+    progress_label.setAlignment(Qt.AlignCenter)
+
+    layout = QVBoxLayout()
+    layout.addWidget(progress_label)
+    layout.addWidget(progress_bar)
+
+    dialog = QDialog()
+    dialog.setWindowTitle("进度")
+    dialog.setLayout(layout)
+    dialog.show()
 
     file_times = {}
     file_sizes = {}
     total_elapsed_time = 0
     total_content_length = 0
 
-    with ThreadPoolExecutor(max_workers=os.cpu_count()) as executor:
-        futures = {executor.submit(process_file, file, progress_bar, total_files): file for file in files}
+    with ThreadPoolExecutor(max_workers=min(32, os.cpu_count())) as executor:
+        futures = {executor.submit(process_single_file, file, progress_bar, total_files): file for file in files}
         for future in as_completed(futures):
             try:
                 file, elapsed_time, content_length = future.result()
@@ -155,9 +162,8 @@ def process_files_with_options(directory, process_option):
                 logging.error(f"处理文件时出错：{e}")
 
     print_stats(file_times, file_sizes, total_elapsed_time, total_content_length)
-    messagebox.showinfo("完成", "文件处理已完成。")
-    progress_bar.destroy()
-    progress_label.config(text="处理已完成")
+    QMessageBox.information(None, "完成", "文件处理已完成。")
+    dialog.accept()
 
 def print_stats(file_times, file_sizes, total_elapsed_time, total_content_length):
     """
@@ -174,41 +180,62 @@ def print_stats(file_times, file_sizes, total_elapsed_time, total_content_length
     print(f"\n总的文件处理时间: {total_elapsed_time:.2f} 秒")
     print(f"总的文件内容长度: {total_content_length} 字节")
 
-def process_files():
-    """
-    处理多个文件
-    """
-    directory = filedialog.askdirectory()
-    if not directory:
-        return
+class FileProcessorApp(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.initUI()
 
-    option_window = Toplevel(root)
-    option_window.title("选项")
-    option_window.geometry("300x150")
+    def initUI(self):
+        self.setWindowTitle('文件批量处理工具')
+        self.setGeometry(100, 100, 400, 300)
 
-    process_option = tk.IntVar(value=3)
+        layout = QVBoxLayout()
 
-    only_recognize_radio = Radiobutton(option_window, text="仅进行识别不分割", variable=process_option, value=1)
-    only_recognize_radio.pack(pady=5)
+        self.process_button = QPushButton('选择文件夹并处理文件', self)
+        self.process_button.clicked.connect(self.process_files)
+        layout.addWidget(self.process_button)
 
-    only_split_radio = Radiobutton(option_window, text="仅进行分割不识别", variable=process_option, value=2)
-    only_split_radio.pack(pady=5)
+        self.setLayout(layout)
 
-    both_radio = Radiobutton(option_window, text="进行分割和识别", variable=process_option, value=3)
-    both_radio.pack(pady=5)
+    def process_files(self):
+        directory = str(QFileDialog.getExistingDirectory(self, "选择文件夹"))
+        if not directory:
+            return
 
-    def on_confirm():
-        option_window.destroy()
-        process_files_with_options(directory, process_option.get())
+        option_dialog = QDialog(self)
+        option_dialog.setWindowTitle("选项")
+        option_dialog.setGeometry(100, 100, 300, 150)
 
-    confirm_button = tk.Button(option_window, text="确认", command=on_confirm)
-    confirm_button.pack(pady=10)
+        layout = QVBoxLayout()
 
-# 创建主窗口
-root = tk.Tk()
-root.title("文件批量处理工具")
+        self.process_option = QButtonGroup()
 
-process_button = tk.Button(root, text="选择文件夹并处理文件", command=process_files)
-process_button.pack(pady=20)
+        only_recognize_radio = QRadioButton("仅进行识别不分割", option_dialog)
+        self.process_option.addButton(only_recognize_radio, 1)
+        layout.addWidget(only_recognize_radio)
 
-root.mainloop()
+        only_split_radio = QRadioButton("仅进行分割不识别", option_dialog)
+        self.process_option.addButton(only_split_radio, 2)
+        layout.addWidget(only_split_radio)
+
+        both_radio = QRadioButton("进行分割和识别", option_dialog)
+        self.process_option.addButton(both_radio, 3)
+        both_radio.setChecked(True)
+        layout.addWidget(both_radio)
+
+        confirm_button = QPushButton("确认", option_dialog)
+        confirm_button.clicked.connect(lambda: self.on_confirm(option_dialog, directory))
+        layout.addWidget(confirm_button)
+
+        option_dialog.setLayout(layout)
+        option_dialog.exec_()
+
+    def on_confirm(self, dialog, directory):
+        dialog.accept()
+        process_files_with_options(directory, self.process_option.checkedId())
+
+if __name__ == '__main__':
+    app = QApplication(sys.argv)
+    ex = FileProcessorApp()
+    ex.show()
+    sys.exit(app.exec_())
