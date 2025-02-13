@@ -1,7 +1,7 @@
 # 文件批量处理工具
 
 ![Python Version](https://img.shields.io/badge/python-3.8%2B-blue)
-![License](https://img.shields.io/badge/license-MIT-green)
+![License](https://img.shields.io/badge/license-GNU%20GPL%20v3-blue)
 
 ## 🌟 功能特性
 
