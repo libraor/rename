@@ -1,4 +1,3 @@
-# main.py
 import sys
 import time
 import os
@@ -7,8 +6,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from PyQt5.QtWidgets import QApplication, QMessageBox
 from openai import OpenAI
 from window import FileProcessorApp
-from pdf_processor import split_pdf_by_layout  # 引入PDF遍历和分割模块
-import file_reader  # 引入文件读取模块
+from pdf_processor import split_pdf_by_layout
+import file_reader
 
 # 设置PaddlePaddle的线程数
 os.environ['OMP_NUM_THREADS'] = '1'
@@ -17,14 +16,11 @@ os.environ['MKL_NUM_THREADS'] = '1'
 # 从 pw.py 文件中导入配置信息
 from pw import API_KEY, BASE_URL, MODEL_NAME
 
-os.environ['LIBPNG_WARNING_LEVEL'] = '2'  # 设置为2可以抑制警告
+os.environ['LIBPNG_WARNING_LEVEL'] = '2'
 logging.basicConfig(filename='app.log', level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # 更改 API 密钥和基础 URL 为火山接口的信息
-client = OpenAI(
-    api_key=API_KEY,  # 火山接口 API 密钥
-    base_url=BASE_URL,  # 火山接口域名
-)
+client = OpenAI(api_key=API_KEY, base_url=BASE_URL)
 
 def extract_time_openai(text):
     """
@@ -87,7 +83,7 @@ def process_single_file(file, progress_bar, total_files):
             os.rename(file, new_file_path)
             elapsed_time = time.time() - start_time
             logging.info(f"文件 {file} 已重命名为 {new_file_path}")
-            return (file, elapsed_time, content_length)
+            return (new_file_path, elapsed_time, content_length)
         else:
             logging.warning(f"文件 {file} 处理失败，未获取到时间信息")
             return (file, None, content_length)
@@ -115,6 +111,12 @@ class FileProcessor:
     def __init__(self, app):
         self.app = app  # 注入app实例
 
+    def get_total_files(self, directory):
+        """
+        获取指定目录下的文件总数
+        """
+        return len(get_files(directory))
+
     def process_files_with_options(self, directory, process_option):
         """
         处理多个文件，根据选项决定是否进行PDF分割以及是否进行文件内容的识别和重命名
@@ -123,51 +125,61 @@ class FileProcessor:
             files = get_files(directory)
         elif process_option == 2:  # 仅进行分割不识别
             files = get_files(directory, '.pdf')
-            for pdf_file in files:
-                logging.info(f"开始分割 PDF 文件: {pdf_file}")
-                split_pdf_by_layout(pdf_file, directory)
-                logging.info(f"完成分割 PDF 文件: {pdf_file}")
+            self.split_pdfs(files, directory)
             QMessageBox.information(None, "完成", "仅进行了PDF分割。")
-            return
+            return []
         elif process_option == 3:  # 进行分割和识别
             pdf_files = get_files(directory, '.pdf')
-            for pdf_file in pdf_files:
-                logging.info(f"开始分割 PDF 文件: {pdf_file}")
-                split_pdf_by_layout(pdf_file, directory)
-                logging.info(f"完成分割 PDF 文件: {pdf_file}")
+            self.split_pdfs(pdf_files, directory)
             files = get_files(directory)
 
         if not files:
-            return
+            return []
 
-        total_files = len(files)
-        progress_dialog, progress_bar = self.app.show_progress_dialog(total_files)  # 获取对话框和进度条
+        total_files = len(files)  # 重新计算总文件数
+        processed_files = self.process_files(files, total_files)
+        return processed_files
 
+    def split_pdfs(self, pdf_files, directory):
+        """
+        分割PDF文件
+        """
+        for pdf_file in pdf_files:
+            logging.info(f"开始分割 PDF 文件: {pdf_file}")
+            split_pdf_by_layout(pdf_file, directory)
+            logging.info(f"完成分割 PDF 文件: {pdf_file}")
+
+    def process_files(self, files, total_files):
+        """
+        处理文件
+        """
         file_times = {}
         file_sizes = {}
         total_elapsed_time = 0
         total_content_length = 0
+        processed_files = []
 
         # 使用单线程执行器
         with ThreadPoolExecutor(max_workers=1) as executor:
-            futures = {executor.submit(process_single_file, file, progress_bar, total_files): file for file in files}
-            for future in as_completed(futures):
+            futures = {executor.submit(process_single_file, file, None, total_files): file for file in files}
+            for i, future in enumerate(as_completed(futures)):
                 try:
-                    file, elapsed_time, content_length = future.result()
+                    processed_file = future.result()
+                    processed_files.append(processed_file)
+                    file, elapsed_time, content_length = processed_file
                     if elapsed_time is not None:
                         file_times[file] = elapsed_time
                         total_elapsed_time += elapsed_time
                     if content_length is not None:
                         file_sizes[file] = content_length
                         total_content_length += content_length
-                    self.app.update_progress(len(file_times), total_files)
+                    self.app.update_progress(i + 1, total_files)  # 更新进度条
                 except Exception as e:
-                    logging.error(f"处理文件时出错：{e}")
+                    logging.error(f"处理文件时出错：{e}", exc_info=True)
+                    QMessageBox.critical(None, "错误", f"处理文件时出错：{e}")
 
         print_stats(file_times, file_sizes, total_elapsed_time, total_content_length)
-        QMessageBox.information(None, "完成", "文件处理已完成。")
-        progress_dialog.accept()
-
+        return processed_files
 if __name__ == '__main__':
     app = QApplication(sys.argv)
     file_processor_app = FileProcessorApp(None)  # 创建FileProcessorApp实例

@@ -2,12 +2,30 @@
 from PyQt5.QtWidgets import (QApplication, QWidget, QPushButton, QVBoxLayout, 
                             QRadioButton, QButtonGroup, QLabel, QProgressBar, 
                             QMessageBox, QFileDialog, QDialog)
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QThread, pyqtSignal
+
+class Worker(QThread):
+    progress = pyqtSignal(int, int)  # 定义一个信号，传递已处理文件数和总文件数
+    finished = pyqtSignal()  # 定义一个信号，表示处理完成
+
+    def __init__(self, processor, directory, process_option):
+        super().__init__()
+        self.processor = processor
+        self.directory = directory
+        self.process_option = process_option
+
+    def run(self):
+        total_files = self.processor.get_total_files(self.directory)
+        processed_files = self.processor.process_files_with_options(self.directory, self.process_option)
+        total_files = len(processed_files)  # 重新计算总文件数
+        for i, file in enumerate(processed_files):
+            self.progress.emit(i + 1, total_files)  # 发出信号
+        self.finished.emit()  # 发出完成信号
 
 class FileProcessorApp(QWidget):
     def __init__(self, processor):
         super().__init__()
-        self.processor = processor  # 注入处理器对象
+        self.processor = processor
         self.initUI()
 
     def initUI(self):
@@ -57,7 +75,16 @@ class FileProcessorApp(QWidget):
     def on_confirm(self, dialog, directory):
         dialog.accept()
         process_option = self.process_option.checkedId()
-        self.processor.process_files_with_options(directory, process_option)
+        self.start_processing(directory, process_option)
+
+    def start_processing(self, directory, process_option):
+        total_files = self.processor.get_total_files(directory)
+        self.progress_dialog, self.progress_bar = self.show_progress_dialog(total_files)
+
+        self.worker = Worker(self.processor, directory, process_option)
+        self.worker.progress.connect(self.update_progress)
+        self.worker.finished.connect(self.on_processing_finished)  # 添加完成信号连接
+        self.worker.start()
 
     def show_progress_dialog(self, total_files):
         dialog = QDialog(self)
@@ -77,9 +104,13 @@ class FileProcessorApp(QWidget):
 
         dialog.setLayout(layout)
         dialog.show()
-        return dialog, self.progress_bar  # 返回对话框和进度条
+        return dialog, self.progress_bar
 
     def update_progress(self, processed_count, total_files):
         percent = int((processed_count / total_files) * 100)
         self.progress_label.setText(f"{percent}% 完成")
         self.progress_bar.setValue(processed_count)
+
+    def on_processing_finished(self):
+        self.progress_dialog.accept()
+        QMessageBox.information(None, "完成", "文件处理已完成。") 
