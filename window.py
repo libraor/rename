@@ -16,11 +16,11 @@ class Worker(QThread):
 
     def run(self):
         total_files = self.processor.get_total_files(self.directory)
-        processed_files = self.processor.process_files_with_options(self.directory, self.process_option)
-        total_files = len(processed_files)  # 重新计算总文件数
-        for i, file in enumerate(processed_files):
-            self.progress.emit(i + 1, total_files)  # 发出信号
+        self.processor.process_files_with_options(self.directory, self.process_option, self.progress_callback)
         self.finished.emit()  # 发出完成信号
+
+    def progress_callback(self, processed, total):
+        self.progress.emit(processed, total)  # 将回调转发给进度信号
 
 class FileProcessorApp(QWidget):
     def __init__(self, processor):
@@ -113,4 +113,4 @@ class FileProcessorApp(QWidget):
 
     def on_processing_finished(self):
         self.progress_dialog.accept()
-        QMessageBox.information(None, "完成", "文件处理已完成。") 
+        QMessageBox.information(None, "完成", "文件处理已完成。")

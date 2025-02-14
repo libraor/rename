@@ -1,3 +1,4 @@
+# main.py
 import sys
 import time
 import os
@@ -62,7 +63,7 @@ def sanitize_filename(filename):
     """
     return "".join(x for x in filename if x.isalnum() or x in "._- ")
 
-def process_single_file(file, progress_bar, total_files):
+def process_single_file(file, callback, processed_count, total_files):
     """
     处理单个文件
     """
@@ -83,13 +84,19 @@ def process_single_file(file, progress_bar, total_files):
             os.rename(file, new_file_path)
             elapsed_time = time.time() - start_time
             logging.info(f"文件 {file} 已重命名为 {new_file_path}")
+            if callback:
+                callback(processed_count + 1, total_files)  # 调用回调函数
             return (new_file_path, elapsed_time, content_length)
         else:
             logging.warning(f"文件 {file} 处理失败，未获取到时间信息")
+            if callback:
+                callback(processed_count + 1, total_files)  # 调用回调函数
             return (file, None, content_length)
     except Exception as e:
         logging.error(f"处理文件 {file} 时出错：{e}", exc_info=True)
         QMessageBox.critical(None, "错误", f"处理文件 {file} 时出错：{e}")
+        if callback:
+            callback(processed_count + 1, total_files)  # 调用回调函数
         return (file, None, None)
 
 def print_stats(file_times, file_sizes, total_elapsed_time, total_content_length):
@@ -117,7 +124,7 @@ class FileProcessor:
         """
         return len(get_files(directory))
 
-    def process_files_with_options(self, directory, process_option):
+    def process_files_with_options(self, directory, process_option, callback=None):
         """
         处理多个文件，根据选项决定是否进行PDF分割以及是否进行文件内容的识别和重命名
         """
@@ -137,7 +144,7 @@ class FileProcessor:
             return []
 
         total_files = len(files)  # 重新计算总文件数
-        processed_files = self.process_files(files, total_files)
+        processed_files = self.process_files(files, total_files, callback)
         return processed_files
 
     def split_pdfs(self, pdf_files, directory):
@@ -149,7 +156,7 @@ class FileProcessor:
             split_pdf_by_layout(pdf_file, directory)
             logging.info(f"完成分割 PDF 文件: {pdf_file}")
 
-    def process_files(self, files, total_files):
+    def process_files(self, files, total_files, callback=None):
         """
         处理文件
         """
@@ -161,8 +168,8 @@ class FileProcessor:
 
         # 使用单线程执行器
         with ThreadPoolExecutor(max_workers=1) as executor:
-            futures = {executor.submit(process_single_file, file, None, total_files): file for file in files}
-            for i, future in enumerate(as_completed(futures)):
+            futures = {executor.submit(process_single_file, file, callback, i, total_files): file for i, file in enumerate(files)}
+            for future in as_completed(futures):
                 try:
                     processed_file = future.result()
                     processed_files.append(processed_file)
@@ -173,17 +180,16 @@ class FileProcessor:
                     if content_length is not None:
                         file_sizes[file] = content_length
                         total_content_length += content_length
-                    self.app.update_progress(i + 1, total_files)  # 更新进度条
                 except Exception as e:
                     logging.error(f"处理文件时出错：{e}", exc_info=True)
                     QMessageBox.critical(None, "错误", f"处理文件时出错：{e}")
 
         print_stats(file_times, file_sizes, total_elapsed_time, total_content_length)
         return processed_files
+
 if __name__ == '__main__':
     app = QApplication(sys.argv)
-    file_processor_app = FileProcessorApp(None)  # 创建FileProcessorApp实例
-    processor = FileProcessor(file_processor_app)  # 将FileProcessorApp实例注入到processor中
-    file_processor_app.processor = processor  # 将processor实例注入到FileProcessorApp中
+    processor = FileProcessor(None)  # 创建FileProcessor实例
+    file_processor_app = FileProcessorApp(processor)  # 将FileProcessor实例注入到FileProcessorApp中
     file_processor_app.show()
     sys.exit(app.exec_())
