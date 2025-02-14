@@ -9,6 +9,7 @@ from openai import OpenAI
 from window import FileProcessorApp
 from pdf_processor import split_pdf_by_layout
 import file_reader
+from utils import get_files  # 导入 get_files 函数
 
 # 设置PaddlePaddle的线程数
 os.environ['OMP_NUM_THREADS'] = '1'
@@ -43,20 +44,6 @@ def extract_time_openai(text):
         QMessageBox.critical(None, "错误", error_message)
         return None
 
-def get_files(directory, ext=None):
-    """
-    返回指定目录下的所有文件路径列表，可选地根据扩展名过滤
-    """
-    if not directory:
-        return []
-
-    file_list = []
-    for root, _, files in os.walk(directory):
-        for file in files:
-            if ext is None or file.lower().endswith(ext):
-                file_list.append(os.path.join(root, file))
-    return file_list
-
 def sanitize_filename(filename):
     """
     过滤掉文件名中的非法字符
@@ -72,6 +59,8 @@ def process_single_file(file, callback, processed_count, total_files):
         content = file_reader.get_file_content(file)
         if content is None:
             logging.warning(f"读取文件 {file} 失败")
+            if callback:
+                callback(processed_count + 1, total_files)  # 调用回调函数
             return (file, None, None)
 
         content_length = len(content)
@@ -189,7 +178,8 @@ class FileProcessor:
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
-    processor = FileProcessor(None)  # 创建FileProcessor实例
-    file_processor_app = FileProcessorApp(processor)  # 将FileProcessor实例注入到FileProcessorApp中
+    file_processor_app = FileProcessorApp(None)  # 创建FileProcessorApp实例
+    processor = FileProcessor(file_processor_app)  # 将FileProcessorApp实例注入到processor中
+    file_processor_app.processor = processor  # 将processor实例注入到FileProcessorApp中
     file_processor_app.show()
     sys.exit(app.exec_())
