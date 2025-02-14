@@ -1,9 +1,11 @@
 # window.py
+
 from PyQt5.QtWidgets import (QApplication, QWidget, QPushButton, QVBoxLayout, 
                             QRadioButton, QButtonGroup, QLabel, QProgressBar, 
                             QMessageBox, QFileDialog, QDialog)
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from utils import get_files  # 导入 get_files 函数
+from pdf_processor import split_pdfs  # 导入 split_pdfs 函数
 
 class Worker(QThread):
     # 定义一个信号，传递已处理文件数和总文件数
@@ -125,7 +127,7 @@ class FileProcessorApp(QWidget):
         # 先进行PDF分割
         if process_option == 2 or process_option == 3:
             pdf_files = get_files(directory, '.pdf')
-            self.processor.split_pdfs(pdf_files, directory)
+            split_pdfs(pdf_files, directory)  # 直接调用 pdf_processor.py 中的 split_pdfs 函数
 
         # 重新计算总文件数
         total_files = self.processor.get_total_files(directory)

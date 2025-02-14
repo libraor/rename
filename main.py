@@ -1,4 +1,5 @@
 # main.py
+
 import sys
 import time
 import os
@@ -7,9 +8,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from PyQt5.QtWidgets import QApplication, QMessageBox
 from openai import OpenAI
 from window import FileProcessorApp
-from pdf_processor import split_pdf_by_layout
+from pdf_processor import split_pdf_by_layout, split_pdfs  # 导入 split_pdfs 函数
 import file_reader
-from utils import get_files  # 导入 get_files 函数
+from utils import get_files, sanitize_filename, print_stats  # 导入 get_files, sanitize_filename 和 print_stats 函数
 
 # 设置PaddlePaddle的线程数
 os.environ['OMP_NUM_THREADS'] = '1'
@@ -43,12 +44,6 @@ def extract_time_openai(text):
         logging.error(error_message, exc_info=True)
         QMessageBox.critical(None, "错误", error_message)
         return None
-
-def sanitize_filename(filename):
-    """
-    过滤掉文件名中的非法字符
-    """
-    return "".join(x for x in filename if x.isalnum() or x in "._- ")
 
 def process_single_file(file, callback, processed_count, total_files):
     """
@@ -88,21 +83,6 @@ def process_single_file(file, callback, processed_count, total_files):
             callback(processed_count + 1, total_files)  # 调用回调函数
         return (file, None, None)
 
-def print_stats(file_times, file_sizes, total_elapsed_time, total_content_length):
-    """
-    打印统计信息
-    """
-    print("\n每个文件的处理时间：")
-    for file, elapsed_time in file_times.items():
-        print(f"{file}: {elapsed_time:.2f} 秒")
-
-    print("\n每个文件的内容长度：")
-    for file, content_length in file_sizes.items():
-        print(f"{file}: {content_length} 字节")
-
-    print(f"\n总的文件处理时间: {total_elapsed_time:.2f} 秒")
-    print(f"总的文件内容长度: {total_content_length} 字节")
-
 class FileProcessor:
     def __init__(self, app):
         self.app = app  # 注入app实例
@@ -120,13 +100,13 @@ class FileProcessor:
         if process_option == 1:  # 仅进行识别不分割
             files = get_files(directory)
         elif process_option == 2:  # 仅进行分割不识别
-            files = get_files(directory, '.pdf')
-            self.split_pdfs(files, directory)
+            pdf_files = get_files(directory, '.pdf')
+            split_pdfs(pdf_files, directory)  # 调用 pdf_processor.py 中的 split_pdfs 函数
             QMessageBox.information(None, "完成", "仅进行了PDF分割。")
             return []
         elif process_option == 3:  # 进行分割和识别
             pdf_files = get_files(directory, '.pdf')
-            self.split_pdfs(pdf_files, directory)
+            split_pdfs(pdf_files, directory)  # 调用 pdf_processor.py 中的 split_pdfs 函数
             files = get_files(directory)
 
         if not files:
@@ -135,15 +115,6 @@ class FileProcessor:
         total_files = len(files)  # 重新计算总文件数
         processed_files = self.process_files(files, total_files, callback)
         return processed_files
-
-    def split_pdfs(self, pdf_files, directory):
-        """
-        分割PDF文件
-        """
-        for pdf_file in pdf_files:
-            logging.info(f"开始分割 PDF 文件: {pdf_file}")
-            split_pdf_by_layout(pdf_file, directory)
-            logging.info(f"完成分割 PDF 文件: {pdf_file}")
 
     def process_files(self, files, total_files, callback=None):
         """
